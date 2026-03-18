@@ -69,6 +69,8 @@ S3 > us-est-n-virginia-bucket > permissions / autoristations > Stratégie de com
 
 ## cli: create layer
 
+`lambdalayerffmpeg.zip` is a generated artifact. Keep it out of Git, build it locally, then upload it to S3 before publishing the Lambda layer version.
+
 
     curl -O https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-amd64-static.tar.xz
     tar xf ffmpeg-git-amd64-static.tar.xz

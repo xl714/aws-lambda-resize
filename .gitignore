@@ -8,3 +8,6 @@ lambda/origin-response-function/node_modules/
 # secrets
 lambda/origin-response-function/src/aws.credentials.json
 local-env/express-app/src/aws.credentials.json
+
+# build artifacts
+archives/s3-event-lambda-nodejs/lambdalayerffmpeg.zip
