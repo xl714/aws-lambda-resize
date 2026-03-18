@@ -1,0 +1,18 @@
+{
+  "name": "express-app",
+  "version": "1.0.0",
+  "description": "test aws-mfimg lambda function locally",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "XL714",
+  "license": "ISC",
+  "devDependencies": {},
+  "dependencies": {
+    "aws-sdk": "^2.546.0",
+    "body-parser": "*",
+    "express": "*",
+    "sharp": "^0.23.1"
+  }
+}

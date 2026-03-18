@@ -1,0 +1,15 @@
+version: '3.7'
+services:
+    amazonlinux-node:
+        container_name: amazonlinux-node
+        build: ./node
+        ports:
+            - "3420:3420"
+        networks:
+            - amazonlinux-network
+        volumes:
+            - /projects:/projects
+        command: /bin/bash /root/start.sh
+
+networks:
+    amazonlinux-network:

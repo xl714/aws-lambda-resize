@@ -1,0 +1,10 @@
+local-env/express-app/src/aws.credentials.xl714.json
+local-env/express-app/package-lock.json
+local-env/express-app/node_modules/
+lambda/origin-response-function/package-lock.json
+lambda/origin-response-function/src/aws.credentials.xl714.json
+lambda/origin-response-function/node_modules/
+
+# secrets
+lambda/origin-response-function/src/aws.credentials.json
+local-env/express-app/src/aws.credentials.json

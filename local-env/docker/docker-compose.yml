@@ -1,0 +1,30 @@
+version: '3.7'
+services:
+    awsmfimg-node:
+        container_name: awsmfimg-node
+        build: ./node
+        ports:
+            - "3420:3420"
+        networks:
+            - awsmfimg-network
+        volumes:
+            #- ../express-app:/projects/express-app
+            - /projects:/projects
+        command: /bin/bash /root/start.sh
+
+    awsmfimg-nginx:
+        container_name: awsmfimg-nginx
+        build: ./nginx
+        ports:
+            - "420:420"
+        links:
+            - awsmfimg-node
+        volumes:
+            - ./nginx/etc-nginx-sites-enabled:/etc/nginx/sites-enabled
+            #- ../express-app:/projects/express-app
+            - /projects:/projects
+        networks:
+            - awsmfimg-network
+
+networks:
+    awsmfimg-network:

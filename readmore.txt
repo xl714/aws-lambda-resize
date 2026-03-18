@@ -1,0 +1,98 @@
+
+# S3 Bucket
+https://s3.console.aws.amazon.com/s3/buckets/us-est-n-virginia-bucket/?region=us-west-2&tab=overview
+
+# CloudFront Distribution : E687WICPKSWID => https://dox0gwyva7wl9.cloudfront.net
+https://console.aws.amazon.com/cloudfront/home?region=us-west-2#distributions:
+
+# test image
+https://us-est-n-virginia-bucket.s3.amazonaws.com/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg
+cloud front en direcet sur le s3
+https://d15b1l28s4saob.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg
+
+
+# Lambda functions
+https://console.aws.amazon.com/lambda/home?region=us-east-1#/functions
+
+# super tuto pour débuter les lambda edge functions : https://www.tutorialspoint.com/aws_lambda/aws_lambda_using_aws_lambdaedge_with_cloudfront
+
+
+##### MA VERSION ! :
+
+docker build --tag amazonlinux:nodejs .
+
+docker run --rm --volume ${PWD}/lambda/origin-response-function:/build amazonlinux:nodejs /bin/bash -c "source ~/.bashrc; npm init -f -y; npm install sharp --save; npm install querystring --save; npm install --only=prod"
+
+aws configure
+
+aws lambda update-function-code --function-name mfImgOriginResponseFunction --zip-file fileb://dist/origin-response-function.zip
+
+
+// awsIfImgOriginResponseFunction :
+    - si précédente version : > supprime le trigger cloudfront de la précédente version de la fonction
+    - je la modifie en direct dans l'éditeur Lambda en ligne
+    - puis > "Save" > "Publish new version" > ajoute le trigger cloudfront pour cette dernière version
+
+// awsMfImgOriginResponseFunction :
+    - Lancer ces lignes de commande pour créer le paquet et l'envoyer sur Aws pour mettre à jour ma fonction lambda (forcément crée en ligne auparavant) :
+        rm dist/origin-response-function.zip ;
+        mkdir -p dist && cd lambda/origin-response-function && zip -FS -q -r ../../dist/origin-response-function.zip * && cd ../.. ;
+        aws lambda update-function-code --function-name awsMfImgOriginResponseFunction --zip-file fileb://dist/origin-response-function.zip ;
+    - si précédente version : > supprime le trigger cloudfront de la précédente version de la fonction
+    - puis > "Publish new version" > ajoute le trigger cloudfront pour cette dernière version
+
+> Checker ici l'état du cloudfront : https://console.aws.amazon.com/cloudfront/home#distributions:
+    > Une fois "Deployed" au lieu de "In progress" finalement tester notre url :
+    https://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg?alias=cover&size=x50&format=webp
+
+> Eventuellement vider les caches cloudfront :
+    (avoir bien auparavant mis la policy CloudFrontFullAccess au IAM user, sinon ne pas oublier d'attendre 5min après l'avoir fait)
+    aws cloudfront create-invalidation --distribution-id EFJLENZBHHV06 --paths "/*"
+
+
+
+Info: https://aws.amazon.com/fr/about-aws/whats-new/2019/05/aws_lambda_adds_support_for_node_js_v10/
+
+
+
+
+
+
+bash-4.2# nodemon app.js
+[nodemon] 1.19.3
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching dir(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `node app.js`
+Listening on http://dev.mfawsimg.dtd (port: 3001)
+-------- origin-response-function --------
+response: { status: '404', statusDescription: 'Not Found' }
+env:  dev
+uri:  /var/pleinevie/storage/images/1/7/2/172215/monica-bellucci-1ere-edition-academy-motion-picture-arts-and-sciences-palazzo-barberin_exact1024x768_l_x100.webp
+originalKey:  var/pleinevie/storage/images/1/7/2/172215/monica-bellucci-1ere-edition-academy-motion-picture-arts-and-sciences-palazzo-barberin.jpg
+aliasKey:  var/pleinevie/storage/images/1/7/2/172215/monica-bellucci-1ere-edition-academy-motion-picture-arts-and-sciences-palazzo-barberin_exact1024x768_l_x100.webp
+params:  [Object: null prototype] {
+  alias: 'exact1024x768_l',
+  size: 'x100',
+  format: 'webp',
+  original:
+   'var/pleinevie/storage/images/1/7/2/172215/monica-bellucci-1ere-edition-academy-motion-picture-arts-and-sciences-palazzo-barberin.jpg' }
+alias:  exact1024x768_l , size:  x100 , ratio:  1 , format:  webp , originalKey:  var/pleinevie/storage/images/1/7/2/172215/monica-bellucci-1ere-edition-academy-motion-picture-arts-and-sciences-palazzo-barberin.jpg , uri:  /var/pleinevie/storage/images/1/7/2/172215/monica-bellucci-1ere-edition-academy-motion-picture-arts-and-sciences-palazzo-barberin_exact1024x768_l_x100.webp , BUCKET:  us-est-n-virginia-bucket  ,contentType:  image/webp
+Next: Calling imageManager.scalewidth(filter.params:  { width: 1024 } );
+Next: ImageManager.scalewidth > this.sharp.resize(params):  { width: 1024 }
+Next: Calling imageManager.crop(filter.params:  { width: 1024, height: 768, top: 0, left: 0 } );
+Next: ImageManager.crop > this.sharp.resize(params):  { width: 1024, height: 768, top: 0, left: 0 }
+
+> imageManager.sharp.webp() > DONE
+
+(node:676) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+[Error: vips_realpath: unable to form filename
+unix error: No such file or directory
+extract_area: bad extract area
+
+]
+callback response: { status: 404,
+  statusDescription: 'Not Found',
+  body: 'Image non trouvée' }
+exit
+^Cbash-4.2# exit
