@@ -1,41 +1,36 @@
 /*
     https://read.acloud.guru/serverless-image-optimization-and-delivery-510b6c311fe5
-    1rst time :
-        source ~/.bashrc
-        cd /projects/mfimg-aws-lambda-s3/local-env/express-app
-        npm init
-        npm i -D express body-parser
-        npm i -S sharp
-        npm i -S serverless-apigw-binary serverless-apigwy-binary
-        npm i -g serverless
-        npm i -g nodemon
-    Next every time:
-        cd /projects/mfimg-aws-lambda-s3/local-env/express-app ; ./start-app.sh
-    Then go to http://dev.mfawsimg.dtd:420/status
+    Local run:
+        cd local-env/express-app
+        npm install
+        npm start
+    Then go to http://localhost:3420/status
+    Or, with the optional nginx reverse proxy:
+        http://dev.awsimg.dtd:420/status
 
     Projet Images sur S3 via Lambda Edge (aws-mfimg)
     - View Request Function transforme ça : (TODO)
-        http://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg?alias=cover&size=x50&format=webp
+        http://d1mzm0npacvjji.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg?alias=cover&size=x50&format=webp
         en
-        http://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit_cover_x2.webp?alias=cover&size=x50&format=webp&original=var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg
+        http://d1mzm0npacvjji.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample_cover_x50.webp?alias=cover&size=x50&format=webp&original=medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg
     - Origin Response Function
         - récupère les parametres (OK)
         - récupérer l'image originale du bucket (OK)
         - applique les filtres par alias avec les parametres
         - stocke l'alias
         - retourne l'alias
-        (image de test : https://us-est-n-virginia-bucket.s3.amazonaws.com/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg)
+        (image de test : https://us-est-n-virginia-bucket.s3.amazonaws.com/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg)
 
     - URL TEST :
-        http://dev.mfawsimg.dtd:420/status
+        http://dev.awsimg.dtd:420/status
         # si fichier
-        http://dev.mfawsimg.dtd:420/origin-response/alias-width400-not-exists-original-exists.js
+        http://dev.awsimg.dtd:420/origin-response/alias-width400-not-exists-original-exists.js
         # si params dans url
-        http://dev.mfawsimg.dtd:420/origin-response/false/panorama.jpg/exact1900x908_l
-        http://dev.mfawsimg.dtd:420/origin-response/false/landscape.jpg/exact1024x768_l
-        http://dev.mfawsimg.dtd:420/origin-response/false/portrait.jpg/true680x328
-        http://dev.mfawsimg.dtd:420/origin-response/false/small.gif/width400
-        http://dev.mfawsimg.dtd:420/origin-response/false/heavy-7mo.gif/width400
+        http://dev.awsimg.dtd:420/origin-response/false/panorama.jpg/exact1900x908_l
+        http://dev.awsimg.dtd:420/origin-response/false/landscape.jpg/exact1024x768_l
+        http://dev.awsimg.dtd:420/origin-response/false/portrait.jpg/true680x328
+        http://dev.awsimg.dtd:420/origin-response/false/small.gif/width400
+        http://dev.awsimg.dtd:420/origin-response/false/heavy-7mo.gif/width400
 
     Piste pour resizer les GIFs animés:
         https://ezgif.com/about >>> gifsicle and lossygif - making, optimizing, cutting, resizing animated GIFs
@@ -54,7 +49,7 @@ const callback = (myVar = null, response = {varname: "varValue"}) => {
     return functionRes.status(200).send(response).end();
 };
 
-app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
+app.get(['/origin-response', '/origin-response/:jsmockfile', '/origin-response/:jsmockfile/:original', '/origin-response/:jsmockfile/:original/:alias'], (req, res) => {
 
     functionRes = res; // usefull to mock the aws callback() on local env
 
@@ -85,7 +80,7 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
                 wantedAlias = req.params.alias,
                 wantedFormat = 'webp'
             ;
-            event.Records[0].cf.request.querystring = 'alias='+wantedAlias+'&size=x100&format='+wantedFormat+'&original=test-images/'+originalFileName;
+            event.Records[0].cf.request.querystring = 'alias='+wantedAlias+'&size=x100&format='+wantedFormat+'&original=medias/idoldistrict/images/test-images/'+originalFileName;
             console.log('event', event);
         }
         else{
@@ -116,28 +111,29 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
 
 /*
     Transform :
-    http://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg?alias=cover&size=x2&format=webp
+    http://d1mzm0npacvjji.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg?alias=cover&size=x2&format=webp
     en
-    http://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit_cover_x2.webp?alias=cover&size=x2&format=webp&original=var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg
+    http://d1mzm0npacvjji.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample_cover_x50.webp?alias=cover&size=x50&format=webp&original=medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg
 */
-app.get('/viewer-request/:jsmockfile?', (req, res) => {
+app.get(['/viewer-request', '/viewer-request/:jsmockfile'], (req, res) => {
     functionRes = res; // usefull to mock the aws callback() on local env
+    let event;
 
     //
     // False event objects to mock the aws one on local env
     //
-    // http://dev.mfawsimg.dtd:420/viewer-request/good-alias-url.js
-    // http://dev.mfawsimg.dtd:420/viewer-request/good-original-url.js
-    // http://dev.mfawsimg.dtd:420/viewer-request/gif.js
+    // http://dev.awsimg.dtd:420/viewer-request/good-alias-url.js
+    // http://dev.awsimg.dtd:420/viewer-request/good-original-url.js
+    // http://dev.awsimg.dtd:420/viewer-request/gif.js
 
     console.log('req.params.jsmockfile ', req.params.jsmockfile);
     if(typeof req.params.jsmockfile != 'undefined'){
         console.log('req.params.jsmockfile 1 ', typeof req.params.jsmockfile);
         console.log('req.params.jsmockfile.toString() ', req.params.jsmockfile.toString());
-        var event = require('./src/mocks/viewer-request/'+req.params.jsmockfile.toString());
+        event = require('./src/mocks/viewer-request/'+req.params.jsmockfile.toString());
     }else{
         console.log('req.params.jsmockfile 2 ', typeof req.params.jsmockfile);
-        const event = require('./src/mocks/viewer-request/good-original-url');
+        event = require('./src/mocks/viewer-request/good-original-url');
     }
 
 
@@ -290,4 +286,4 @@ app.get('/status', (req, res) => {
 });
 
 const server = app.listen(3420, () =>
-  console.log('Listening on ' + `http://dev.mfawsimg.dtd (port: ${server.address().port})`));
+  console.log('Listening on ' + `http://localhost:${server.address().port}`));

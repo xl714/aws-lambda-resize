@@ -1,220 +1,155 @@
-# Local development and online deployment environment for AWS Lambda Edge functions
+# aws-lambda-resize
 
-How it will work : Our sites will call that kind of image url :
+Shared image resize pipeline for CloudFront + Lambda@Edge.
 
-`htt../var/pleinevie/storage/blabla/image.jpg?alias=cover&size=x50&format=webp`
+This repository currently contains:
+- a `viewer-request` Lambda that rewrites image requests to alias targets
+- an `origin-response` Lambda that generates missing resized variants from S3 originals
+- a local Express harness that reuses the current Lambda business logic for development
+- an optional Docker + nginx setup for local proxy testing
 
-1 - View Request Function will transform this url to :  
+## Current Scope
 
-`htt../var/pleinevie/storage/blabla/image_cover_x50.webp?alias=cover&size=x50&format=webp&original=var/pleinevie/storage/blabla/image.jpg`
+- Runtime target: Node.js 24
+- Current path convention: `medias/<site_code>/images/...`
+- `site_code` is resolved from the path, not from the host
+- Supported generated formats: `jpeg`, `webp`, `avif`
+- Legacy `var/<site>/storage/images/...` paths are no longer supported by the runtime
 
-2 - Then Origin Response Function will :
+## Repository Layout
 
-- If the alias doesn't already exists on the S3 bucket (response status code != 200) :
-      - get all parameters
-      - fetch the original image from the bucket
-      - apply all the transformations filters needed by the alias configuration
-      - (asynchronously: store the new alias image on the bucket)
-      - return the new image alias
+- `lambda/viewer-request-function/`: CloudFront viewer-request function
+- `lambda/origin-response-function/`: CloudFront origin-response function and its runtime dependencies
+- `local-env/express-app/`: local app that injects the current Lambda business logic into HTTP routes
+- `local-env/docker/`: optional nginx + node local environment
+- `archives/`: historical docs and scripts kept for reference only
 
+## Requirements
 
-> Optional note: I used this good tutorial for a good start:  [Serverless app for on-demand image processing](https://read.acloud.guru/serverless-image-optimization-and-delivery-510b6c311fe5)
+- Node.js 24 for local development
+- Docker only if you want the optional local nginx + node setup
+- AWS credentials with access to the target S3 bucket
+- At least one real original image already present in S3 for end-to-end origin-response tests
 
+The local harness is not fully offline: the origin-response flow still reads the original from S3 and may write generated variants back to S3.
 
-## AWS Prerequisites
+## Local Development
 
-- S3 Bucket with an image on it (with public read access)
-- IAM S3BucketUser
-- AllowLambdaRole
-- Cloudfront distribution
+### Direct run on your machine
 
-Check http://dokuwiki.digimondo.net/doku.php?id=aws-lambda-s3-images:mise_en_place_du_service for details
-
-## Install
-
-> Info: C'est c'est tout du Node v10
-
- - Install **[Docker](https://docs.docker.com/install/#server)** and **[Docker-compose](https://docs.docker.com/compose/install/)**.
- - Add this to your /etc/hosts file:
 ```bash
-127.0.0.1 dev.mfawsimg.dtd
-```
-
- - Then :
-```bash
-
-# get repository
-git clone https://<my-git-name>:<mygit-password>@bitbucket.org/dtdmondadori/mfimg-aws-lambda-s3.git
-
-cd mfimg-aws-lambda-s3/local-env/docker/
-
-# Initialize and launch nginx and node containers
-docker-compose up -d
-
-#Check your running containers
-docker ps -a
-
-# Should output something like that :
-CONTAINER ID        IMAGE                   COMMAND                  CREATED             STATUS              PORTS                         NAMES
-7174a9052e15        docker_awsmfimg-nginx   "nginx"                  22 seconds ago      Up 21 seconds       0.0.0.0:80->80/tcp, 443/tcp   awsmfimg-nginx
-33b71706346b        docker_awsmfimg-node    "/bin/bash /root/sta…"   23 seconds ago      Up 22 seconds       0.0.0.0:3001->3001/tcp        awsmfimg-node
-
-# Enter node container
-docker exec -it awsmfimg-node /bin/bash
-
-# Check you are in the express-app directory
-pwd
-
-# Should output /projects/express-app, if not:
-cd /projects/express-app
-
-# Init
-source ~/.bashrc
-
-# eventualy in package.json put * instead of version and then :
-npm update --save
-
+cd local-env/express-app
 npm install
-# npm install => will install these :
-# npm i aws-sdk body-parser sharp express
 
-# exit the container
-exit
+# Either rely on the default AWS SDK credential chain
+# (aws configure, env vars, SSO, etc.)
+# or create a local credentials file from the example.
+cp src/aws.credentials.example.json src/aws.credentials.json
 
-# shutdown all containers
-docker stop $(docker ps -a -q) && docker rm -v $(docker ps -a -q)
+# Recommended if the selected mock event does not contain a CloudFront S3 origin.
+export BUCKET_NAME=xlanglois-us-media-main
 
+npm start
 ```
-## How to code and test
+
+Then open:
+- `http://localhost:3420/status`
+- `http://localhost:3420/viewer-request`
+- `http://localhost:3420/origin-response`
+
+Important notes:
+- `npm start` regenerates `local-env/express-app/app.js` from the current Lambda sources each time.
+- If you change Lambda code while the local server is already running, stop it and start it again.
+- The `viewer-request` route can be exercised without S3, but `origin-response` needs a reachable original image.
+
+### Update the local mock to a real S3 object
+
+Before a meaningful origin-response test, update one of the mock files under:
+- `local-env/express-app/src/mocks/origin-response/`
+
+Use a real existing original path such as:
+- `medias/idoldistrict/images/.../image.jpg`
+
+If the mock event does not provide a CloudFront S3 origin domain, the app falls back to `BUCKET_NAME`.
+
+## Optional Docker + nginx Local Setup
+
+If you want the `dev.awsimg.dtd` host locally, add this entry to `/etc/hosts`:
 
 ```bash
-
-cd mfimg-aws-lambda-s3/local-env/docker/
-
-#  Start your nginx and node containers
-docker-compose up -d
-
-# Check your running containers
-docker ps -a
-
-# Enter node container
-docker exec -it awsmfimg-node /bin/bash
-
-# Go to your express-app directory
-cd /projects/express-app
-
-# Start your node server
-# nodemon app.js  # ne suffit plus !
-cd /projects/mfimg-aws-lambda-s3/local-env/express-app; 
-./start-app.sh;
-
-```
-Now you can go to your test function
-- [http://dev.mfawsimg.dtd/status](http://dev.mfawsimg.dtd/status)
-- [http://dev.mfawsimg.dtd/viewer-request](http://dev.mfawsimg.dtd/viewer-request)
-- [http://dev.mfawsimg.dtd/origin-response](http://dev.mfawsimg.dtd/origin-response)
-
-> NOTE: If you need to make a change, there is a catch, when you save your edited js file, nodemon will crash => you just need to start it again ( `nodemon app.js`)  each time you make a change
-> (if you know how to fix this, tell me)
-
-
-## How to deploy
-
-The directory tree in mfimg-aws-lambda-s3/local-env/express-app and mfimg-aws-lambda-s3/lambda
-
-### Edit these files before
-
-  * In all files in `mfimg-aws-lambda-s3/local-env/express-app/src/mocks/origin-response/*` replace `var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg` by the path to the image you put in your bucket
-
-  * lambda/origin-response-function/index.js line 9 => set the real bucket name
-
-``` javascript
-const BUCKET = 'us-est-n-virginia-bucket-name-here';
+127.0.0.1 dev.awsimg.dtd
 ```
 
-  * aws.credentials.json => set real accessKeyId and secretAccessKey value of the S3BucketUser
+Then start the containers:
 
-``` javascript
-{
-    "accessKeyId": "REPLACE_WITH_AWS_ACCESS_KEY_ID",
-    "secretAccessKey": "REPLACE_WITH_AWS_SECRET_ACCESS_KEY",
-    "region": "us-east-1"
-}
+```bash
+cd local-env/docker
+docker compose up -d
+docker exec -it awsimg-node /bin/bash
+cd /workspace/aws-lambda-resize/local-env/express-app
+npm install
+npm start
 ```
 
-### Replicate your code
-Because you can't use express on your Lambda edge functions, you have to take the code from inside
-your express-app/app.js and put it in the real Lambda functions called eg mfImgViewerRequestFunction and mfImgOriginResponseFunction.
+Then open:
+- `http://dev.awsimg.dtd:420/status`
+- `http://dev.awsimg.dtd:420/viewer-request`
+- `http://dev.awsimg.dtd:420/origin-response`
 
-#### Lambda Request Viewer Function:
+## Packaging the Origin-Response Lambda
 
-You can just copy-paste from your express app request-viewer route code to the
-AWS  console > Lambda > mfImgViewerRequestFunction
-Then > Save > Publish > Add trigger Cloudfront > Select ViewerRequest > Deploy
+The `origin-response` function depends on `sharp`, so package its production dependencies in the Lambda Node 24 container image defined by the root `Dockerfile`.
 
-#### Lambda Origin Response Function
+```bash
+docker build --tag awsimg-lambda-node24 .
+docker run --rm --volume ${PWD}/lambda/origin-response-function:/build awsimg-lambda-node24 /bin/bash -lc "npm install --omit=dev"
 
-Because there are sharp and/or other node dependancies (in node_modules) : the source code is too heavy to put in AWS Console Lambda function editor.
-So you have to
--  copy-paste from your express app origin-response route code inside your
-mfimg-aws-lambda-s3/lambda/origin-response-function/index.js function
-- add also the other new or updated files needed by your code (eg in src directory)
-
-Then, as told in the tutorial https://aws.amazon.com/fr/blogs/networking-and-content-delivery/resizing-images-with-amazon-cloudfront-lambdaedge-aws-cdn-blog/
-
-
-``` bash
-cd mfimg-aws-lambda-s3
-docker build --tag amazonlinux:nodejs .
-docker run --rm --volume ${PWD}/lambda/origin-response-function:/build amazonlinux:nodejs /bin/bash -c "source ~/.bashrc; npm init -f -y; npm install sharp --save; npm install querystring --save; npm install --only=prod"
-
-rm dist/origin-response-function.zip ;
-
-mkdir -p dist && cd lambda/origin-response-function && zip -FS -q -r ../../dist/origin-response-function.zip * && cd ../.. ;
-```
-Très pratique **AWSCLI** :
-
-``` bash
-# la 1ère fois
-apt-get install awscli
-aws configure
-
-# ensuite trop simple
-# va mettre à jour la fontion
-aws lambda update-function-code --function-name mfImgOriginResponseFunction --zip-file fileb://dist/origin-response-function.zip
-
-#vider le cache cloudfront
-aws cloudfront create-invalidation --distribution-id $CDN_DISTRIBUTION_ID --paths "/*"
-
-# mettre toutes les images du storage dans le bucket
-aws s3 cp var/siteaccessdir s3://us-est-n-virginia-bucket/var/siteaccessdir
+rm -f dist/origin-response-function.zip
+mkdir -p dist
+cd lambda/origin-response-function && zip -FS -q -r ../../dist/origin-response-function.zip * && cd ../..
 ```
 
-Au final, quand tout est prêt, quand je modifie je n'ai plus que ça à faire d'un seul copier-coller-entrer (--- prepare-lambda-function-for-upload ---)
+The generated archive is:
+- `dist/origin-response-function.zip`
 
+## Manual AWS Update
 
-``` bash
+If you are still updating the function manually instead of via IaC:
 
-rm dist/origin-response-function.zip ;
-mkdir -p dist && cd lambda/origin-response-function && zip -FS -q -r ../../dist/origin-response-function.zip * && cd ../.. ;
-aws lambda update-function-code --function-name awsMfImgOriginResponseFunction --zip-file fileb://dist/origin-response-function.zip --publish
+```bash
+aws lambda update-function-code \
+  --function-name <origin-response-function-name> \
+  --zip-file fileb://dist/origin-response-function.zip \
+  --publish
+
+aws cloudfront create-invalidation \
+  --distribution-id <distribution-id> \
+  --paths "/*"
 ```
 
-Mais ce n'est pas fini, une fois que c'est bien uploadé, ensuite il faut aller sur la fonction origin-response dans aws console lambda puis :
+Lambda@Edge reminders:
+- create and publish Lambda@Edge functions in `us-east-1`
+- CloudFront associations must point to a published Lambda version, not `$LATEST`
+- CloudFront ACM certificates must also be in `us-east-1`
+- CloudFront should access S3 through OAC
 
-  - Aller sur la version précédente de la fonction lambda (liste déroulante en haut à droite)
-  - Supprimer l'ancien trigger, puis "Save"
-  - Aller sur la dernière version
-  - Ajouter le bon trigger cloudfront et déployer
-  - Attendre la fin du déploiement en checkant le status de la distribution CloudFront
+## Project Status
 
-Voilà
+Current repo focus:
+- runtime alignment on `medias/<site_code>/images/...`
+- local validation for `idoldistrict`
+- preparing the path toward shared S3 + CloudFront + Lambda@Edge infrastructure
+
+Not yet present in this repo:
+- finished CDK bootstrap / infrastructure as code
+- automated end-to-end tests against real AWS resources
+- a complete deployment runbook for the final target architecture
+
+## Historical Files
+
+Older Node 8 era notes and scripts were moved to `archives/`.
+They are kept only as historical reference and should not be used as the source of truth for the current workflow.
 
 
 
 
-
-
-## Markdown language is cool
-
-[https://stackedit.io/app#](https://stackedit.io/app#)

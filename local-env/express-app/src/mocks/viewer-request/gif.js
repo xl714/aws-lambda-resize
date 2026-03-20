@@ -13,7 +13,7 @@ module.exports = {
                             }
                         ]
                     },
-                    "uri": "/var/ssn/storage/images/390/test-gif.gif",
+                    "uri": "/medias/idoldistrict/images/390/test-gif.gif",
                     "querystring": "alias=cover&size=x50&format=webp"
                 },
                 "response": {

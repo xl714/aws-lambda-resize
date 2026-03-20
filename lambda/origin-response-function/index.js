@@ -4,13 +4,52 @@ exports.handler = (event, context, callback) => {
 
     // START_OF_BUSINESS_LOGIC_CODE
 
-    const ENV = 'dev';
+    const isLambdaRuntime = Boolean(process.env.LAMBDA_TASK_ROOT || process.env.AWS_EXECUTION_ENV);
+    const ENV = isLambdaRuntime ? 'prod' : (process.env.APP_ENV || process.env.ENV || 'dev');
 
     if(ENV != "prod") console.log('-------- origin-response-function --------');
 
-    const querystring = require('querystring');
+    const querystring = require('node:querystring');
 
-    const BUCKET = 'us-est-n-virginia-bucket';
+    const resolveBucket = (request) => {
+        const origin = request.origin || {};
+        const domainName = origin.s3 && origin.s3.domainName;
+
+        if (domainName) {
+            const separatorIndex = domainName.indexOf('.s3');
+            if (separatorIndex > 0) {
+                return domainName.slice(0, separatorIndex);
+            }
+        }
+
+        return process.env.BUCKET_NAME || 'us-est-n-virginia-bucket';
+    };
+
+    const extractSiteCode = (resourcePath) => {
+        const normalizedPath = String(resourcePath || '').replace(/^\/+/, '');
+
+        const match = normalizedPath.match(/^medias\/([^/]+)\/images\//i);
+        return match ? match[1] : null;
+    };
+
+    const loadConfAliases = (siteCode) => {
+        if (!siteCode) {
+            return {};
+        }
+
+        try {
+            return require('./src/conf/aliases/conf-aliases-' + siteCode);
+        }
+        catch (error) {
+            if (error.code == 'MODULE_NOT_FOUND' && error.message.includes('conf-aliases-' + siteCode)) {
+                if(ENV != "prod") console.log('No site alias config found for siteCode:', siteCode);
+                return {};
+            }
+
+            throw error;
+        }
+    };
+
     const Sharp = require('sharp');
     const S3Manager = require('./src/s3-manager');
     const ImageManager = require('./src/image-manager');
@@ -25,9 +64,18 @@ exports.handler = (event, context, callback) => {
         return;
     }
 
+    const normalizeFormat = (value) => {
+        if (!value) {
+            return value;
+        }
+
+        return value.toLowerCase() == "jpg" ? "jpeg" : value.toLowerCase();
+    };
+
     let
-        s3Manager = new S3Manager(BUCKET),
         request = event.Records[0].cf.request,
+        BUCKET = resolveBucket(request),
+        s3Manager = new S3Manager(BUCKET),
         uri = request.uri,
         params = querystring.parse(request.querystring)
     ;
@@ -38,15 +86,14 @@ exports.handler = (event, context, callback) => {
     }
 
     let
-        siteaccess = uri.replace(/^\/?var\/([^/]+)\/.*$/g, '$1'),
-        ConfAliases = require('./src/conf/aliases/conf-aliases-'+siteaccess),
-
         alias = params.alias || 'original',
         size = params.size || 'x100',
         ratio = Conf.Sizes[size] || false,
-        format = params.format == "jpg" ? "jpeg" : params.format,
+        format = normalizeFormat(params.format || 'jpeg'),
         aliasKey = uri.replace(/^\/?(.*)$/g, '$1'),
-        originalKey = params.original
+        originalKey = params.original,
+        siteCode = extractSiteCode(originalKey || uri),
+        ConfAliases = loadConfAliases(siteCode)
     ;
 
     if(!ratio){
@@ -63,19 +110,22 @@ exports.handler = (event, context, callback) => {
         response.status = 404; response.body = 'Error: input format not found';
         return callback(null, response);
     }
-    let originalFormat = findOriginalFormatRes[1].toLowerCase();
-    if(originalFormat == 'jpg'){
-        originalFormat = 'jpeg';
+    let originalFormat = normalizeFormat(findOriginalFormatRes[1]);
+    if(!Conf.Formats.includes(format)){
+        if(ENV != "prod") console.log('Error: input format '+format+' not allowed');
+        response.status = 404; response.body = 'Error: input format '+format+' not allowed';
+        return callback(null, response);
     }
 
-    if(originalFormat == 'gif' && format == 'jpeg'){
-        format = 'gif';
+    let outputFormat = format;
+    if(originalFormat == 'gif' && outputFormat != 'webp'){
+        outputFormat = 'gif';
     }
-    let contentType = 'image/' + format;
+    let contentType = 'image/' + outputFormat;
 
     if(ENV != "prod"){
         console.log('ENV: ', ENV); console.log('uri: ', uri); console.log('originalKey: ', originalKey); console.log('aliasKey: ', aliasKey); console.log('params: ', params);
-        console.log('alias: ', alias, ', size: ', size, ', ratio: ', ratio, ', format: ', format, ', originalFormat: ', originalFormat, ', contentType: ', contentType, ', originalKey: ', originalKey, ', uri: ', uri, ', BUCKET: ', BUCKET);
+        console.log('alias: ', alias, ', size: ', size, ', ratio: ', ratio, ', format: ', outputFormat, ', originalFormat: ', originalFormat, ', contentType: ', contentType, ', originalKey: ', originalKey, ', uri: ', uri, ', BUCKET: ', BUCKET);
     }
 
     if(!['png', 'jpeg', 'gif'].includes(originalFormat)){
@@ -100,7 +150,7 @@ exports.handler = (event, context, callback) => {
             let imageManager = new ImageManager(Sharp, data.image);
             return new Promise((resolve, reject) => {
 
-                if(originalFormat == 'gif' && format != 'webp'){
+                if(originalFormat == 'gif' && outputFormat != 'webp'){
                     if(ENV != "prod") console.log('originalFormat == gif && format != webp >>> return original >>> resolve 0 data ', data.image);
                     return resolve(data.image);
                 }
@@ -120,12 +170,22 @@ exports.handler = (event, context, callback) => {
                 }
 
                 // Ici on applique la mise au format webp si demandé
-                if(format == 'webp'){
+                if(outputFormat == 'webp'){
                     // https://sharp.pixelplumbing.com/en/stable/api-output/#webp
-                    imageManager.sharp.webp();
+                    imageManager.sharp.webp({
+                        quality: 80,
+                        effort: 4
+                    });
                     if(ENV != "prod") console.log("> imageManager.sharp.webp() >>> DONE");
                 }
-                else if(format == 'jpeg'){
+                else if(outputFormat == 'avif'){
+                    imageManager.sharp.avif({
+                        quality: 50,
+                        effort: 4
+                    });
+                    if(ENV != "prod") console.log("> imageManager.sharp.avif(50) >>> DONE");
+                }
+                else if(outputFormat == 'jpeg'){
                     imageManager.sharp.jpeg({
                         quality: 80
                     });
@@ -139,7 +199,7 @@ exports.handler = (event, context, callback) => {
                     .toBuffer()
                     .then( data => {
                         if(ENV != "prod") console.log("> imageManager.sharp.toBuffer() 1 > DONE");
-                        if(ratio == 1 || format == 'gif')
+                        if(ratio == 1 || outputFormat == 'gif')
                         {
                             if(ENV != "prod") console.log('ratio == 1 || format == gif >>> resolve 1', data);
                             return resolve(data);
@@ -176,9 +236,10 @@ exports.handler = (event, context, callback) => {
             if(
                 ENV == "prod"
                 &&
-                ! ( format == originalFormat && size == 'x100' && alias == 'original' )
+                ! ( outputFormat == originalFormat && size == 'x100' && alias == 'original' )
             ){
-                s3Manager.uploadImage(aliasKey, data, contentType);
+                s3Manager.uploadImage(aliasKey, data, contentType)
+                    .catch(error => console.error("Exception while writing resized image to bucket: ", error));
                 if(ENV != "prod") console.log("> s3Manager.uploadImage > LAUNCHED async");
             }
             else{

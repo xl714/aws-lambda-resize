@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /projects/mfimg-aws-lambda-s3/local-env/express-app
+cd /workspace/aws-lambda-resize/local-env/express-app
 
 # remplacer dans package.json ex redis : "*" avec la derniere version
 # npm update --save

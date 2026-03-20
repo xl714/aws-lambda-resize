@@ -1,41 +1,36 @@
 /*
     https://read.acloud.guru/serverless-image-optimization-and-delivery-510b6c311fe5
-    1rst time :
-        source ~/.bashrc
-        cd /projects/mfimg-aws-lambda-s3/local-env/express-app
-        npm init
-        npm i -D express body-parser
-        npm i -S sharp
-        npm i -S serverless-apigw-binary serverless-apigwy-binary
-        npm i -g serverless
-        npm i -g nodemon
-    Next every time:
-        cd /projects/mfimg-aws-lambda-s3/local-env/express-app ; ./start-app.sh
-    Then go to http://dev.mfawsimg.dtd:420/status
+    Local run:
+        cd local-env/express-app
+        npm install
+        npm start
+    Then go to http://localhost:3420/status
+    Or, with the optional nginx reverse proxy:
+        http://dev.awsimg.dtd:420/status
 
     Projet Images sur S3 via Lambda Edge (aws-mfimg)
     - View Request Function transforme ça : (TODO)
-        http://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg?alias=cover&size=x50&format=webp
+        http://d1mzm0npacvjji.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg?alias=cover&size=x50&format=webp
         en
-        http://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit_cover_x2.webp?alias=cover&size=x50&format=webp&original=var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg
+        http://d1mzm0npacvjji.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample_cover_x50.webp?alias=cover&size=x50&format=webp&original=medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg
     - Origin Response Function
         - récupère les parametres (OK)
         - récupérer l'image originale du bucket (OK)
         - applique les filtres par alias avec les parametres
         - stocke l'alias
         - retourne l'alias
-        (image de test : https://us-est-n-virginia-bucket.s3.amazonaws.com/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg)
+        (image de test : https://us-est-n-virginia-bucket.s3.amazonaws.com/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg)
 
     - URL TEST :
-        http://dev.mfawsimg.dtd:420/status
+        http://dev.awsimg.dtd:420/status
         # si fichier
-        http://dev.mfawsimg.dtd:420/origin-response/alias-width400-not-exists-original-exists.js
+        http://dev.awsimg.dtd:420/origin-response/alias-width400-not-exists-original-exists.js
         # si params dans url
-        http://dev.mfawsimg.dtd:420/origin-response/false/panorama.jpg/exact1900x908_l
-        http://dev.mfawsimg.dtd:420/origin-response/false/landscape.jpg/exact1024x768_l
-        http://dev.mfawsimg.dtd:420/origin-response/false/portrait.jpg/true680x328
-        http://dev.mfawsimg.dtd:420/origin-response/false/small.gif/width400
-        http://dev.mfawsimg.dtd:420/origin-response/false/heavy-7mo.gif/width400
+        http://dev.awsimg.dtd:420/origin-response/false/panorama.jpg/exact1900x908_l
+        http://dev.awsimg.dtd:420/origin-response/false/landscape.jpg/exact1024x768_l
+        http://dev.awsimg.dtd:420/origin-response/false/portrait.jpg/true680x328
+        http://dev.awsimg.dtd:420/origin-response/false/small.gif/width400
+        http://dev.awsimg.dtd:420/origin-response/false/heavy-7mo.gif/width400
 
     Piste pour resizer les GIFs animés:
         https://ezgif.com/about >>> gifsicle and lossygif - making, optimizing, cutting, resizing animated GIFs
@@ -54,7 +49,7 @@ const callback = (myVar = null, response = {varname: "varValue"}) => {
     return functionRes.status(200).send(response).end();
 };
 
-app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
+app.get(['/origin-response', '/origin-response/:jsmockfile', '/origin-response/:jsmockfile/:original', '/origin-response/:jsmockfile/:original/:alias'], (req, res) => {
 
     functionRes = res; // usefull to mock the aws callback() on local env
 
@@ -85,7 +80,7 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
                 wantedAlias = req.params.alias,
                 wantedFormat = 'webp'
             ;
-            event.Records[0].cf.request.querystring = 'alias='+wantedAlias+'&size=x100&format='+wantedFormat+'&original=test-images/'+originalFileName;
+            event.Records[0].cf.request.querystring = 'alias='+wantedAlias+'&size=x100&format='+wantedFormat+'&original=medias/idoldistrict/images/test-images/'+originalFileName;
             console.log('event', event);
         }
         else{
@@ -108,13 +103,52 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
 
     // START_OF_BUSINESS_LOGIC_CODE
 
-    const ENV = 'local';
+    const isLambdaRuntime = Boolean(process.env.LAMBDA_TASK_ROOT || process.env.AWS_EXECUTION_ENV);
+    const ENV = isLambdaRuntime ? 'prod' : (process.env.APP_ENV || process.env.ENV || 'dev');
 
     if(ENV != "prod") console.log('-------- origin-response-function --------');
 
-    const querystring = require('querystring');
+    const querystring = require('node:querystring');
 
-    const BUCKET = 's3.dev.image-resize-898660402587-us-east-1';
+    const resolveBucket = (request) => {
+        const origin = request.origin || {};
+        const domainName = origin.s3 && origin.s3.domainName;
+
+        if (domainName) {
+            const separatorIndex = domainName.indexOf('.s3');
+            if (separatorIndex > 0) {
+                return domainName.slice(0, separatorIndex);
+            }
+        }
+
+        return process.env.BUCKET_NAME || 'us-est-n-virginia-bucket';
+    };
+
+    const extractSiteCode = (resourcePath) => {
+        const normalizedPath = String(resourcePath || '').replace(/^\/+/, '');
+
+        const match = normalizedPath.match(/^medias\/([^/]+)\/images\//i);
+        return match ? match[1] : null;
+    };
+
+    const loadConfAliases = (siteCode) => {
+        if (!siteCode) {
+            return {};
+        }
+
+        try {
+            return require('./src/conf/aliases/conf-aliases-' + siteCode);
+        }
+        catch (error) {
+            if (error.code == 'MODULE_NOT_FOUND' && error.message.includes('conf-aliases-' + siteCode)) {
+                if(ENV != "prod") console.log('No site alias config found for siteCode:', siteCode);
+                return {};
+            }
+
+            throw error;
+        }
+    };
+
     const Sharp = require('sharp');
     const S3Manager = require('./src/s3-manager');
     const ImageManager = require('./src/image-manager');
@@ -129,9 +163,18 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
         return;
     }
 
+    const normalizeFormat = (value) => {
+        if (!value) {
+            return value;
+        }
+
+        return value.toLowerCase() == "jpg" ? "jpeg" : value.toLowerCase();
+    };
+
     let
-        s3Manager = new S3Manager(BUCKET),
         request = event.Records[0].cf.request,
+        BUCKET = resolveBucket(request),
+        s3Manager = new S3Manager(BUCKET),
         uri = request.uri,
         params = querystring.parse(request.querystring)
     ;
@@ -142,16 +185,14 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
     }
 
     let
-        siteaccess = uri.replace(/^\/?var\/([^/]+)\/.*$/g, '$1'),
-        //ConfAliases = require('./src/conf/aliases/conf-aliases-'+siteaccess),
-        ConfAliases = require('./src/conf/aliases/conf-aliases-closermag'), 
-
         alias = params.alias || 'original',
         size = params.size || 'x100',
         ratio = Conf.Sizes[size] || false,
-        format = params.format == "jpg" ? "jpeg" : params.format,
+        format = normalizeFormat(params.format || 'jpeg'),
         aliasKey = uri.replace(/^\/?(.*)$/g, '$1'),
-        originalKey = params.original
+        originalKey = params.original,
+        siteCode = extractSiteCode(originalKey || uri),
+        ConfAliases = loadConfAliases(siteCode)
     ;
 
     if(!ratio){
@@ -168,19 +209,22 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
         response.status = 404; response.body = 'Error: input format not found';
         return callback(null, response);
     }
-    let originalFormat = findOriginalFormatRes[1].toLowerCase();
-    if(originalFormat == 'jpg'){
-        originalFormat = 'jpeg';
+    let originalFormat = normalizeFormat(findOriginalFormatRes[1]);
+    if(!Conf.Formats.includes(format)){
+        if(ENV != "prod") console.log('Error: input format '+format+' not allowed');
+        response.status = 404; response.body = 'Error: input format '+format+' not allowed';
+        return callback(null, response);
     }
 
-    if(originalFormat == 'gif' && format == 'jpeg'){
-        format = 'gif';
+    let outputFormat = format;
+    if(originalFormat == 'gif' && outputFormat != 'webp'){
+        outputFormat = 'gif';
     }
-    let contentType = 'image/' + format;
+    let contentType = 'image/' + outputFormat;
 
     if(ENV != "prod"){
         console.log('ENV: ', ENV); console.log('uri: ', uri); console.log('originalKey: ', originalKey); console.log('aliasKey: ', aliasKey); console.log('params: ', params);
-        console.log('alias: ', alias, ', size: ', size, ', ratio: ', ratio, ', format: ', format, ', originalFormat: ', originalFormat, ', contentType: ', contentType, ', originalKey: ', originalKey, ', uri: ', uri, ', BUCKET: ', BUCKET);
+        console.log('alias: ', alias, ', size: ', size, ', ratio: ', ratio, ', format: ', outputFormat, ', originalFormat: ', originalFormat, ', contentType: ', contentType, ', originalKey: ', originalKey, ', uri: ', uri, ', BUCKET: ', BUCKET);
     }
 
     if(!['png', 'jpeg', 'gif'].includes(originalFormat)){
@@ -205,7 +249,7 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
             let imageManager = new ImageManager(Sharp, data.image);
             return new Promise((resolve, reject) => {
 
-                if(originalFormat == 'gif' && format != 'webp'){
+                if(originalFormat == 'gif' && outputFormat != 'webp'){
                     if(ENV != "prod") console.log('originalFormat == gif && format != webp >>> return original >>> resolve 0 data ', data.image);
                     return resolve(data.image);
                 }
@@ -225,12 +269,22 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
                 }
 
                 // Ici on applique la mise au format webp si demandé
-                if(format == 'webp'){
+                if(outputFormat == 'webp'){
                     // https://sharp.pixelplumbing.com/en/stable/api-output/#webp
-                    imageManager.sharp.webp();
+                    imageManager.sharp.webp({
+                        quality: 80,
+                        effort: 4
+                    });
                     if(ENV != "prod") console.log("> imageManager.sharp.webp() >>> DONE");
                 }
-                else if(format == 'jpeg'){
+                else if(outputFormat == 'avif'){
+                    imageManager.sharp.avif({
+                        quality: 50,
+                        effort: 4
+                    });
+                    if(ENV != "prod") console.log("> imageManager.sharp.avif(50) >>> DONE");
+                }
+                else if(outputFormat == 'jpeg'){
                     imageManager.sharp.jpeg({
                         quality: 80
                     });
@@ -244,7 +298,7 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
                     .toBuffer()
                     .then( data => {
                         if(ENV != "prod") console.log("> imageManager.sharp.toBuffer() 1 > DONE");
-                        if(ratio == 1 || format == 'gif')
+                        if(ratio == 1 || outputFormat == 'gif')
                         {
                             if(ENV != "prod") console.log('ratio == 1 || format == gif >>> resolve 1', data);
                             return resolve(data);
@@ -281,9 +335,10 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
             if(
                 ENV == "prod"
                 &&
-                ! ( format == originalFormat && size == 'x100' && alias == 'original' )
+                ! ( outputFormat == originalFormat && size == 'x100' && alias == 'original' )
             ){
-                s3Manager.uploadImage(aliasKey, data, contentType);
+                s3Manager.uploadImage(aliasKey, data, contentType)
+                    .catch(error => console.error("Exception while writing resized image to bucket: ", error));
                 if(ENV != "prod") console.log("> s3Manager.uploadImage > LAUNCHED async");
             }
             else{
@@ -319,7 +374,7 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
             callback(null, response);
         });
 
-
+    // END_OF_BUSINESS_LOGIC_CODE
 
     // end of aws lambda code
 
@@ -329,28 +384,29 @@ app.get('/origin-response/:jsmockfile?/:original?/:alias?', (req, res) => {
 
 /*
     Transform :
-    http://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg?alias=cover&size=x2&format=webp
+    http://d1mzm0npacvjji.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg?alias=cover&size=x2&format=webp
     en
-    http://d1mzm0npacvjji.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit_cover_x2.webp?alias=cover&size=x2&format=webp&original=var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg
+    http://d1mzm0npacvjji.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample_cover_x50.webp?alias=cover&size=x50&format=webp&original=medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg
 */
-app.get('/viewer-request/:jsmockfile?', (req, res) => {
+app.get(['/viewer-request', '/viewer-request/:jsmockfile'], (req, res) => {
     functionRes = res; // usefull to mock the aws callback() on local env
+    let event;
 
     //
     // False event objects to mock the aws one on local env
     //
-    // http://dev.mfawsimg.dtd:420/viewer-request/good-alias-url.js
-    // http://dev.mfawsimg.dtd:420/viewer-request/good-original-url.js
-    // http://dev.mfawsimg.dtd:420/viewer-request/gif.js
+    // http://dev.awsimg.dtd:420/viewer-request/good-alias-url.js
+    // http://dev.awsimg.dtd:420/viewer-request/good-original-url.js
+    // http://dev.awsimg.dtd:420/viewer-request/gif.js
 
     console.log('req.params.jsmockfile ', req.params.jsmockfile);
     if(typeof req.params.jsmockfile != 'undefined'){
         console.log('req.params.jsmockfile 1 ', typeof req.params.jsmockfile);
         console.log('req.params.jsmockfile.toString() ', req.params.jsmockfile.toString());
-        var event = require('./src/mocks/viewer-request/'+req.params.jsmockfile.toString());
+        event = require('./src/mocks/viewer-request/'+req.params.jsmockfile.toString());
     }else{
         console.log('req.params.jsmockfile 2 ', typeof req.params.jsmockfile);
-        const event = require('./src/mocks/viewer-request/good-original-url');
+        event = require('./src/mocks/viewer-request/good-original-url');
     }
 
 
@@ -360,11 +416,17 @@ app.get('/viewer-request/:jsmockfile?', (req, res) => {
 
     // START_OF_BUSINESS_LOGIC_CODE
 
-    const ENV = 'local';
+    console.log('-------- viewer-request-function --------');
 
-    if(ENV != "prod") console.log('-------- viewer-request-function --------');
+    const querystring = require('node:querystring');
 
-    const querystring = require('querystring');
+    const normalizeFormat = (value) => {
+        if (!value) {
+            return value;
+        }
+
+        return value.toLowerCase() == "jpg" ? "jpeg" : value.toLowerCase();
+    };
 
     let
         request = event.Records[0].cf.request,
@@ -372,36 +434,33 @@ app.get('/viewer-request/:jsmockfile?', (req, res) => {
         params = querystring.parse(request.querystring),
         alias = params.alias || 'original',
         size = params.size || 'x100',
-        format = params.format || 'jpeg'
+        format = normalizeFormat(params.format || 'jpeg')
     ;
-    format = format == "jpg" ? "jpeg" : format;
-
-    // cas des gifs : on retourne forcement l'originale
-    let findOriginalFormatRes = uri.match(/^.*\.([^\.]+)/i);
-    if(!findOriginalFormatRes || findOriginalFormatRes.length < 2){
-        response.status = 404; response.body = 'Error: input format not found';
-        callback(null, response);
-        return;
-    }
-    let originalFormat = findOriginalFormatRes[1].toLowerCase();
-    if(originalFormat == 'gif'){
-        callback(null, request);
-        return;
-    }
 
     // si on veut vraiment l'originale
-    if(originalFormat == 'jpg'){
-        originalFormat = 'jpeg';
-    }
-    if (params.format == originalFormat && params.alias == 'original' && params.size == 'x100' ) {
+    if (!params.alias && !params.size && !params.format) {
         callback(null, request);
         return;
     }
 
-    if(ENV != "prod") {
-        console.log('uri: ', uri); console.log('params: ', params);
-        console.log('alias: ', alias, ', size: ', size, ', format: ', format);
+    let findOriginalFormatRes = uri.match(/^.*\.([^\.]+)/i);
+    if(findOriginalFormatRes && findOriginalFormatRes.length >= 2){
+        let originalFormat = normalizeFormat(findOriginalFormatRes[1]);
+
+        if(originalFormat == 'gif' && format != 'webp'){
+            callback(null, request);
+            return;
+        }
+
+        if (format == originalFormat && alias == 'original' && size == 'x100') {
+            callback(null, request);
+            return;
+        }
     }
+
+    console.log('uri: ', uri); console.log('params: ', params);
+    console.log('alias: ', alias, ', size: ', size, ', format: ', format);
+    //return callback(null, response);
 
     // trim first / in uri
     let originalPath = uri.replace(/^\/?(.*)$/g, '$1');
@@ -413,13 +472,18 @@ app.get('/viewer-request/:jsmockfile?', (req, res) => {
     newUri += '_' + alias + '_' + size + '.' + format;
 
     request.uri = newUri;
-    request.querystring = 'alias=' + alias + '&size=' + size+ '&format=' + format + '&original=' + originalPath;
+    request.querystring = querystring.stringify({
+        alias,
+        size,
+        format,
+        original: originalPath
+    });
 
-    if(ENV != "prod") console.log('request: ', request);
+    console.log('request: ', request);
 
     callback(null, request);
 
-
+    // END_OF_BUSINESS_LOGIC_CODE
 
 });
 
@@ -564,4 +628,4 @@ app.get('/status', (req, res) => {
 });
 
 const server = app.listen(3420, () =>
-  console.log('Listening on ' + `http://dev.mfawsimg.dtd (port: ${server.address().port})`));
+  console.log('Listening on ' + `http://localhost:${server.address().port}`));

@@ -3,16 +3,21 @@
   "version": "1.0.0",
   "description": "test aws-mfimg lambda function locally",
   "main": "index.js",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
+    "start": "bash ./start-app.sh",
+    "start:raw": "node app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "XL714",
   "license": "ISC",
   "devDependencies": {},
   "dependencies": {
-    "aws-sdk": "^2.546.0",
+    "@aws-sdk/client-s3": "^3.945.0",
     "body-parser": "*",
     "express": "*",
-    "sharp": "^0.23.1"
+    "sharp": "^0.34.5"
   }
 }

@@ -1,77 +1,73 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# cd /projects/mfimg-aws-lambda-s3/local-env/express-app ; ./start-app.sh
+set -euo pipefail
 
-# TOPLEVEL_DIR=$(realpath $(dirname $0))
-# echo $TOPLEVEL_DIR
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/../.." && pwd)"
 
-chmod -R 777 /projects/mfimg-aws-lambda-s3
+app_frame_file="$script_dir/app-frame.js"
+app_frame_tmp_file="$script_dir/app-frame-tmp.js"
+app_final_file="$script_dir/app.js"
 
-app_frame_file="/projects/mfimg-aws-lambda-s3/local-env/express-app/app-frame.js"
-app_frame_tmp_file="/projects/mfimg-aws-lambda-s3/local-env/express-app/app-frame-tmp.js"
-app_final_file="/projects/mfimg-aws-lambda-s3/local-env/express-app/app.js"
+viewer_handler_file="$repo_root/lambda/viewer-request-function/index.js"
+origin_handler_file="$repo_root/lambda/origin-response-function/index.js"
+origin_src_dir="$repo_root/lambda/origin-response-function/src"
+local_src_dir="$script_dir/src"
 
+extract_business_logic() {
+    local source_file="$1"
+    local code=""
+    local keep=false
 
-#
-# VIEWER REQUEST
-#
+    while IFS='' read -r line; do
+        if [[ $line == *"START_OF_BUSINESS_LOGIC_CODE"* ]]; then
+            keep=true
+        fi
+        if [[ $keep == true ]]; then
+            code+="${line}\n"
+        fi
+        if [[ $line == *"END_OF_BUSINESS_LOGIC_CODE"* ]]; then
+            keep=false
+        fi
+    done < "$source_file"
 
-code=""
-keep=false
-while IFS='' read -r line; do
-    if [[ $line == *"START_OF_BUSINESS_LOGIC_CODE"* ]]; then
-        keep=true
+    printf '%b' "$code"
+}
+
+replace_placeholder() {
+    local placeholder="$1"
+    local code="$2"
+    local source_file="$3"
+    local target_file="$4"
+    local line_nb
+
+    line_nb="$(grep -n "$placeholder" "$source_file" | cut -d ":" -f 1)"
+    if [[ -z "$line_nb" ]]; then
+        echo "Placeholder not found: $placeholder" >&2
+        exit 1
     fi
-    if [[ $line == *"END_OF_BUSINESS_LOGIC_CODE"* ]]; then
-        keep=false
-    fi
-    if [ "$keep" = true ] ; then
-        code+="${line}\n"
-    fi
-done < /projects/aws-image-resize/lambda/src/viewer-request-function/index.js
 
-line_nb=$(grep -n 'VIEWER_REQUEST_CODE' $app_frame_file | cut -d ":" -f 1)
-{ head -n $(($line_nb-1)) $app_frame_file; echo -e "$code"; tail -n +$(($line_nb+1)) $app_frame_file; } > $app_frame_tmp_file
+    {
+        head -n "$((line_nb-1))" "$source_file"
+        printf '%s\n' "$code"
+        tail -n "+$((line_nb+1))" "$source_file"
+    } > "$target_file"
+}
 
+viewer_code="$(extract_business_logic "$viewer_handler_file")"
+replace_placeholder "VIEWER_REQUEST_CODE" "$viewer_code" "$app_frame_file" "$app_frame_tmp_file"
 
-#
-# ORIGIN RESPONSE
-#
+origin_code="$(extract_business_logic "$origin_handler_file")"
+replace_placeholder "ORIGIN_RESPONSE_CODE" "$origin_code" "$app_frame_tmp_file" "$app_final_file"
+rm -f "$app_frame_tmp_file"
 
-code=""
-keep=false
-while IFS='' read -r line; do
-    if [[ $line == *"START_OF_BUSINESS_LOGIC_CODE"* ]]; then
-        keep=true
-    fi
-    if [[ $line == *"END_OF_BUSINESS_LOGIC_CODE"* ]]; then
-        keep=false
-    fi
-    if [ "$keep" = true ] ; then
-        code+="${line}\n"
-    fi
-done < /projects/aws-image-resize/lambda/src/origin-response-function/index.js-dist
+mkdir -p "$local_src_dir"
+cp -rf "$origin_src_dir"/. "$local_src_dir"/
 
+if [[ -z "${BUCKET_NAME:-}" ]]; then
+    echo "BUCKET_NAME is not set. The local app will fall back to the bucket from the mock event or the handler default."
+fi
 
-line_nb=$(grep -n 'ORIGIN_RESPONSE_CODE' $app_frame_tmp_file | cut -d ":" -f 1)
-{ head -n $(($line_nb-1)) $app_frame_tmp_file; echo -e "$code"; tail -n +$(($line_nb+1)) $app_frame_tmp_file; } > $app_final_file
-rm $app_frame_tmp_file
+export APP_ENV="${APP_ENV:-local}"
 
-sed -i 's@${DTD_ENV}@local@g' /projects/mfimg-aws-lambda-s3/local-env/express-app/app.js
-sed -i 's@${BUCKET_NAME}@s3.dev.image-resize-898660402587-us-east-1@g' /projects/mfimg-aws-lambda-s3/local-env/express-app/app.js
-
-cp -rf /projects/aws-image-resize/lambda/src/origin-response-function/src/* /projects/mfimg-aws-lambda-s3/local-env/express-app/src
-
-mv /projects/mfimg-aws-lambda-s3/local-env/express-app/src/s3-manager.js-dist /projects/mfimg-aws-lambda-s3/local-env/express-app/src/s3-manager.js
-
-sed -i "s@//\s*AWS\.config\.loadFromPath@AWS.config.loadFromPath@g" /projects/mfimg-aws-lambda-s3/local-env/express-app/src/s3-manager.js
-sed -i 's@${STORAGE_CLASS}@ONEZONE_IA@g' /projects/mfimg-aws-lambda-s3/local-env/express-app/src/s3-manager.js
-
-#
-# START NODE SERVER
-#
-
-chmod -R 777 /projects/mfimg-aws-lambda-s3
-
-#nodemon app.js
-node app.js
+node "$app_final_file"

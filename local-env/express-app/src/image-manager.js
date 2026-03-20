@@ -1,7 +1,9 @@
 class ImageManager
 {
     constructor(Sharp, image) {
-        this.sharp = Sharp(Buffer.from(image.buffer), { pages: -1 });
+        this.Sharp = Sharp;
+        const input = Buffer.isBuffer(image) ? image : Buffer.from(image);
+        this.sharp = Sharp(input, { pages: -1 });
     }
 
     // resize à la plus petite des 2 tailles
@@ -95,10 +97,10 @@ class ImageManager
     {
         if (!image) throw new Error('An Image must be specified');
         if (!size) throw new Error('Image size must be specified');
-        console.log('ImageManager.resize > size: ', params);
+        console.log('ImageManager.resize > size: ', size);
         return new Promise((res, rej) => {
             this
-                .sharp(Buffer.from(image.buffer))
+                .Sharp(Buffer.isBuffer(image) ? image : Buffer.from(image))
                 .resize(size.w, size.h)
                 .webp({quality: quality})
                 .toBuffer()

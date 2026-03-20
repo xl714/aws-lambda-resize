@@ -64,7 +64,7 @@ bash-4.2# nodemon app.js
 [nodemon] watching dir(s): *.*
 [nodemon] watching extensions: js,mjs,json
 [nodemon] starting `node app.js`
-Listening on http://dev.mfawsimg.dtd (port: 3001)
+Listening on http://dev.awsimg.dtd (port: 3001)
 -------- origin-response-function --------
 response: { status: '404', statusDescription: 'Not Found' }
 env:  dev

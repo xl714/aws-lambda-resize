@@ -1,7 +1,10 @@
 {
-  "name": "build",
+  "name": "origin-response-function",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -9,8 +12,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "querystring": "^0.2.0",
-    "sharp": "^0.23.2"
+    "@aws-sdk/client-s3": "^3.945.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {},
   "description": ""

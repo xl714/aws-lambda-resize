@@ -13,7 +13,7 @@ module.exports = {
                             }
                         ]
                     },
-                    "uri": "/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg",
+                    "uri": "/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg",
                     "querystring": ""
                 },
                 "response": {

@@ -12,7 +12,8 @@ module.exports = {
 
     Formats: [
         'jpeg',
-        'webp'
+        'webp',
+        'avif'
     ],
 
     Aliases: {
@@ -169,12 +170,12 @@ module.exports = {
 // exemple d'url appelée :
 /*
 Sur le S3
-https://us-est-n-virginia-bucket.s3.amazonaws.com/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg
+https://us-est-n-virginia-bucket.s3.amazonaws.com/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg
 Cloudfront en direct sur le s3
-https://d15b1l28s4saob.cloudfront.net/var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit.jpg
+https://d15b1l28s4saob.cloudfront.net/medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample.jpg
 
-var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit?alias=<alias_name>&size=Size1&format=jpeg
-var/pleinevie/storage/images/1/7/2/172215/les-francais-dorment-min-moyenne-par-nuit_<alias_name>_Size1.jpg
+medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample?alias=<alias_name>&size=Size1&format=jpeg
+medias/idoldistrict/images/1/7/2/172215/idoldistrict-sample_<alias_name>_Size1.jpg
 
 
 /*

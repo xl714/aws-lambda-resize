@@ -1,63 +1,90 @@
-const AWS = require('aws-sdk');
-//AWS.config.update({region: 'us-east-1'});
-AWS.config.loadFromPath('./src/aws.credentials.json');
+const fs = require('node:fs');
+const path = require('node:path');
+const {
+    GetObjectCommand,
+    PutObjectCommand,
+    S3Client
+} = require('@aws-sdk/client-s3');
 
+const getS3Config = () => {
+    const config = {
+        region: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1'
+    };
+    const credentialsPath = path.join(__dirname, 'aws.credentials.json');
 
-const getFromS3 = (s3, bucketName, fileName) =>
-    new Promise((resolve, reject) => {
-        s3.getObject({
-            Bucket: bucketName,
-            Key: fileName
-        },
-        (error, data) => {
-            if (error) {
-                return reject(error);
-            }
-            const contentType = data.ContentType;
-            const image = data.Body;
-            return resolve({ image, contentType });
-        });
+    if (!fs.existsSync(credentialsPath)) {
+        return config;
     }
-);
+
+    const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+
+    if (credentials.region) {
+        config.region = credentials.region;
+    }
+    if (credentials.accessKeyId && credentials.secretAccessKey) {
+        config.credentials = {
+            accessKeyId: credentials.accessKeyId,
+            secretAccessKey: credentials.secretAccessKey
+        };
+    }
+
+    return config;
+};
+
+const streamToBuffer = async (body) => {
+    if (!body) {
+        return Buffer.alloc(0);
+    }
+    if (Buffer.isBuffer(body)) {
+        return body;
+    }
+    if (typeof body.transformToByteArray === 'function') {
+        return Buffer.from(await body.transformToByteArray());
+    }
+
+    const chunks = [];
+    for await (const chunk of body) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+};
 
 class S3Manager
 {
     constructor(bucketName) {
-        this.S3 = new AWS.S3();
+        this.S3 = new S3Client(getS3Config());
         this.bucketName = bucketName;
     }
 
-    fetchImage(fileName) {
+    async fetchImage(fileName) {
         if (!fileName) {
             return Promise.reject('Filename not specified');
         }
-        return Promise.resolve(
-            getFromS3(this.S3, this.bucketName, fileName)
-        );
+        const data = await this.S3.send(new GetObjectCommand({
+            Bucket: this.bucketName,
+            Key: fileName
+        }));
+
+        return {
+            image: await streamToBuffer(data.Body),
+            contentType: data.ContentType
+        };
     }
 
-    uploadImage(key, data, contentType) {
+    async uploadImage(key, data, contentType) {
         if (!key) { return Promise.reject('image data not specified'); }
         if (!data) { return Promise.reject('image key not specified'); }
         if (!contentType) { return Promise.reject('image contentType not specified'); }
-        this.S3.putObject(
-            {
-                Body: data,
-                Bucket: this.bucketName,
-                ContentType: contentType,
-                CacheControl: 'max-age=31536000',
-                Key: key,
-                StorageClass: 'ONEZONE_IA',
-                ACL: 'public-read'
-            },
-            function(error, data) {
-                if (error) {
-                    console.log("Exception while writing resized image to bucket: ", error);
-                } else {
-                    console.log('Writing resized image to bucket: success');
-                }
-            }
-        );
+        await this.S3.send(new PutObjectCommand({
+            Body: data,
+            Bucket: this.bucketName,
+            ContentType: contentType,
+            CacheControl: 'max-age=31536000',
+            Key: key,
+            StorageClass: 'ONEZONE_IA',
+            ACL: 'public-read'
+        }));
+        console.log('Writing resized image to bucket: success');
     }
 }
 

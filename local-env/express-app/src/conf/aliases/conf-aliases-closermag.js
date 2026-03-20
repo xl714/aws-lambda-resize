@@ -84,7 +84,7 @@ module.exports = {
                 }
             },
             {
-                "name": "topcrop",
+                "name": "centercrop",
                 "params": {
                     "width": 1140,
                     "height": 545

@@ -6,7 +6,15 @@ exports.handler = (event, context, callback) => {
 
     console.log('-------- viewer-request-function --------');
 
-    const querystring = require('querystring');
+    const querystring = require('node:querystring');
+
+    const normalizeFormat = (value) => {
+        if (!value) {
+            return value;
+        }
+
+        return value.toLowerCase() == "jpg" ? "jpeg" : value.toLowerCase();
+    };
 
     let
         request = event.Records[0].cf.request,
@@ -14,14 +22,28 @@ exports.handler = (event, context, callback) => {
         params = querystring.parse(request.querystring),
         alias = params.alias || 'original',
         size = params.size || 'x100',
-        format = params.format || 'jpeg'
+        format = normalizeFormat(params.format || 'jpeg')
     ;
-    format = format == "jpg" ? "jpeg" : format;
 
     // si on veut vraiment l'originale
     if (!params.alias && !params.size && !params.format) {
         callback(null, request);
         return;
+    }
+
+    let findOriginalFormatRes = uri.match(/^.*\.([^\.]+)/i);
+    if(findOriginalFormatRes && findOriginalFormatRes.length >= 2){
+        let originalFormat = normalizeFormat(findOriginalFormatRes[1]);
+
+        if(originalFormat == 'gif' && format != 'webp'){
+            callback(null, request);
+            return;
+        }
+
+        if (format == originalFormat && alias == 'original' && size == 'x100') {
+            callback(null, request);
+            return;
+        }
     }
 
     console.log('uri: ', uri); console.log('params: ', params);
@@ -38,7 +60,12 @@ exports.handler = (event, context, callback) => {
     newUri += '_' + alias + '_' + size + '.' + format;
 
     request.uri = newUri;
-    request.querystring = 'alias=' + alias + '&size=' + size+ '&format=' + format + '&original=' + originalPath;
+    request.querystring = querystring.stringify({
+        alias,
+        size,
+        format,
+        original: originalPath
+    });
 
     console.log('request: ', request);
 

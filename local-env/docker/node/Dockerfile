@@ -1,45 +1,22 @@
-FROM amazonlinux:1
-
-MAINTAINER Xavier Langlois
+FROM node:24-bookworm
 
 WORKDIR /tmp
 
-RUN yum -y update && yum clean all
-
-RUN yum -y install \
-    apt-utils \
-    tree \
-	curl \
-	vim \
-	procps \
-	# pour check netstat -lntp (on ecoute sur quoi) arp, ifconfig, netstat, rarp, nameif and route
-	net-tools \
-	htop
-
-
-#install the dependencies
-RUN yum -y install gcc-c++ && yum -y install findutils
-
-RUN touch ~/.bashrc && chmod +x ~/.bashrc
-
-# RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.5/install.sh | bash
-# or :
-ADD creationix-nvm-v0.33.5-install.sh /root/creationix-nvm-v0.33.5-install.sh
-RUN bash /root/creationix-nvm-v0.33.5-install.sh
-
-#RUN source ~/.bashrc && nvm install 8.10
-RUN source ~/.bashrc && nvm install 10
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        tree \
+        curl \
+        vim \
+        procps \
+        net-tools \
+        htop \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN echo 'alias ll="ls -lah"' >> ~/.bashrc
 
+WORKDIR /workspace/aws-lambda-resize/local-env/express-app
 
-WORKDIR /projects/mfimg-aws-lambda-s3/local-env/express-app
-
-RUN source ~/.bashrc && npm install --global npm
-
-RUN source ~/.bashrc && npm install --global nodemon
-
-RUN yum clean all
+RUN npm install --global npm@11 nodemon
 
 ADD start.sh /root/start.sh
 
